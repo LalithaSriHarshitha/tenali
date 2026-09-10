@@ -135,6 +135,7 @@ app.use('/api/auth', auth.router);
 app.use('/api/progress', progress.router);
 app.use('/api/hints', hints);
 app.use('/api/translate', translate.router);
+app.use('/api/review', require('./routes/review'));
 const treasurehuntRouter = require('./treasurehunt/routes');
 
 console.log("Treasure router imported");
