@@ -76,9 +76,12 @@ const day1Repeat = recordWarmupCompletion(day1.habit);
 assert.strictEqual(day1Repeat.daysCompletedThisWeek, 1, 'Same-day completion must not increment count');
 console.log('✓ Duplicate same-day check passed');
 
-// Simulate Day 2 and Day 3 (Target hit!)
-day1.habit.activeDaysThisWeek.push('2026-09-02'); // Mock Day 2
-const day3 = recordWarmupCompletion(day1.habit); // Today is Day 3
+// Simulate Day 3 completion (Target hit!)
+const habitWithTwoDays = normalizeWeeklyHabit({
+  targetDaysPerWeek: 3,
+  activeDaysThisWeek: ['2026-09-01', '2026-09-02']
+});
+const day3 = recordWarmupCompletion(habitWithTwoDays); // Adds today as Day 3
 assert.strictEqual(day3.daysCompletedThisWeek, 3);
 assert.strictEqual(day3.targetMet, true);
 assert.strictEqual(day3.justAchievedTarget, true, 'Reaching 3/3 target must trigger justAchievedTarget');
