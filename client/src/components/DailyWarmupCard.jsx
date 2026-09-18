@@ -5,49 +5,51 @@ export default function DailyWarmupCard({ completedTopics = [], onSelectTopic, a
   const [warmupData, setWarmupData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const fetchWarmup = async () => {
-    try {
-      setLoading(true);
-      const guestHabit = (() => {
-        try { return JSON.parse(localStorage.getItem('tenali-weekly-habit') || 'null'); } catch { return null; }
-      })();
-      const guestLadder = (() => {
-        try { return JSON.parse(localStorage.getItem('tenali-spacing-ladder') || 'null'); } catch { return null; }
-      })();
-
-      const token = localStorage.getItem('tenali-token') || '';
-      const topicsParam = Array.isArray(completedTopics) && completedTopics.length > 0
-        ? `&topics=${encodeURIComponent(completedTopics.join(','))}`
-        : '';
-      const habitParam = guestHabit ? `&guestHabit=${encodeURIComponent(JSON.stringify(guestHabit))}` : '';
-      const ladderParam = guestLadder ? `&guestLadder=${encodeURIComponent(JSON.stringify(guestLadder))}` : '';
-
-      const res = await fetch(`${apiBase}/api/review/daily-warmup?${topicsParam}${habitParam}${ladderParam}`, {
-        headers: {
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        }
-      });
-
-      const data = await res.json();
-      if (data && data.success) {
-        setWarmupData(data);
-        if (data.weeklyHabit) {
-          try {
-            localStorage.setItem('tenali-weekly-habit', JSON.stringify(data.weeklyHabit));
-          } catch {}
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load daily warmup:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
+    let isMounted = true;
+    const fetchWarmup = async () => {
+      try {
+        const guestHabit = (() => {
+          try { return JSON.parse(localStorage.getItem('tenali-weekly-habit') || 'null'); } catch (e) { void e; return null; }
+        })();
+        const guestLadder = (() => {
+          try { return JSON.parse(localStorage.getItem('tenali-spacing-ladder') || 'null'); } catch (e) { void e; return null; }
+        })();
+
+        const token = localStorage.getItem('tenali-token') || '';
+        const topicsParam = Array.isArray(completedTopics) && completedTopics.length > 0
+          ? `&topics=${encodeURIComponent(completedTopics.join(','))}`
+          : '';
+        const habitParam = guestHabit ? `&guestHabit=${encodeURIComponent(JSON.stringify(guestHabit))}` : '';
+        const ladderParam = guestLadder ? `&guestLadder=${encodeURIComponent(JSON.stringify(guestLadder))}` : '';
+
+        const res = await fetch(`${apiBase}/api/review/daily-warmup?${topicsParam}${habitParam}${ladderParam}`, {
+          headers: {
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        });
+
+        const data = await res.json();
+        if (isMounted && data && data.success) {
+          setWarmupData(data);
+          if (data.weeklyHabit) {
+            try {
+              localStorage.setItem('tenali-weekly-habit', JSON.stringify(data.weeklyHabit));
+            } catch (e) { void e; }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load daily warmup:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
     fetchWarmup();
-  }, [completedTopics]);
+    return () => { isMounted = false; };
+  }, [completedTopics, apiBase, refreshTrigger]);
 
   const habit = warmupData?.weeklyHabit || {
     targetDaysPerWeek: 3,
@@ -202,7 +204,7 @@ export default function DailyWarmupCard({ completedTopics = [], onSelectTopic, a
         onClose={() => setIsModalOpen(false)}
         warmupData={warmupData}
         onWarmupCompleted={() => {
-          fetchWarmup();
+          setRefreshTrigger(t => t + 1);
         }}
         onSelectTopic={onSelectTopic}
         apiBase={apiBase}

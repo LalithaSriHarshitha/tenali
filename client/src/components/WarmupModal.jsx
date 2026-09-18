@@ -38,7 +38,7 @@ export default function WarmupModal({
       setTimeout(() => inputRef.current?.focus(), 150);
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen]);
+  }, [isOpen, warmupData]);
 
   if (!isOpen) return null;
 
@@ -174,12 +174,12 @@ export default function WarmupModal({
           if (data.weeklyHabit) {
             try {
               localStorage.setItem('tenali-weekly-habit', JSON.stringify(data.weeklyHabit));
-            } catch {}
+            } catch (e) { void e; }
           }
           if (data.spacingLadder) {
             try {
               localStorage.setItem('tenali-spacing-ladder', JSON.stringify(data.spacingLadder));
-            } catch {}
+            } catch (e) { void e; }
           }
           setCompletionResult(data);
           if (onWarmupCompleted) {
@@ -189,6 +189,7 @@ export default function WarmupModal({
           setCompletionResult({ xpAwarded: 15, message: '🎉 Warmup completed!' });
         }
       } catch (err) {
+        console.warn('Warmup completion offline fallback:', err?.message || err);
         setCompletionResult({ xpAwarded: 15, message: '🎉 Warmup completed offline!' });
       } finally {
         setIsFinishing(false);
