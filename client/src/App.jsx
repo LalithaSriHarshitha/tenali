@@ -35,6 +35,7 @@ import ShapeSlicer3D from './ShapeSlicer3D';
 import ShapeTranslatorApp from './ShapeTranslatorApp';
 import NetBuilderApp from './NetBuilderApp';
 import CrossSectionApp from './CrossSectionApp';
+import DailyWarmupCard from './components/DailyWarmupCard';
 
 window.React = React;
 console.log("React version:", React.version);
@@ -45276,6 +45277,9 @@ function Home({ onSelect, completedTopics = [], goldMastery = [], coins = 0, isG
             <div className="journey-banner-arrow">➔</div>
           </button>
         </div>
+      )}
+      {!search && !isGoalSelection && (
+        <DailyWarmupCard completedTopics={completedTopics} apiBase={API} onSelectTopic={onSelect} />
       )}
       <div className="search-bar-row">
         <input

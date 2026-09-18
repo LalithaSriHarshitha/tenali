@@ -16,6 +16,7 @@ const {
   normalizeWeeklyHabit,
   isWarmupCompletedToday,
   recordWarmupCompletion,
+  updateTopicSpacingLadder,
   getTodayDateString
 } = require('../lib/dailyWarmup');
 
@@ -52,7 +53,12 @@ async function getOptionalUser(req) {
 router.get('/daily-warmup', async (req, res) => {
   try {
     const user = await getOptionalUser(req);
-    const guestHabit = req.query.guestHabit ? JSON.parse(req.query.guestHabit) : null;
+    const guestHabit = (() => {
+      try { return req.query.guestHabit ? JSON.parse(req.query.guestHabit) : null; } catch { return null; }
+    })();
+    const guestLadder = (() => {
+      try { return req.query.guestLadder ? JSON.parse(req.query.guestLadder) : {}; } catch { return {}; }
+    })();
 
     let practicedTopics = [];
     let habit = null;
@@ -69,11 +75,21 @@ router.get('/daily-warmup', async (req, res) => {
 
       habit = normalizeWeeklyHabit(user.weeklyHabit || {});
     } else {
-      // Guest learner
+      // Guest learner: accept topics passed from localStorage['tenali-completed-topics']
+      if (req.query.topics) {
+        const raw = typeof req.query.topics === 'string'
+          ? req.query.topics.split(',')
+          : (Array.isArray(req.query.topics) ? req.query.topics : []);
+        practicedTopics = raw.filter(Boolean).map((t, idx) => ({
+          topic: t.trim().replace(/-api$/, ''),
+          pMastery: Math.max(0.2, 0.5 - idx * 0.1),
+          lastPracticedAt: Date.now() - (idx + 1) * 2 * 86400000
+        }));
+      }
       habit = normalizeWeeklyHabit(guestHabit || {});
     }
 
-    const selectedTopics = selectWarmupTopics(practicedTopics, 3);
+    const selectedTopics = selectWarmupTopics(practicedTopics, 3, user ? (user.spacingLadder || {}) : guestLadder);
     const questions = selectedTopics.map(st => generateWarmupQuestion(st.topic, 'easy'));
     const completedToday = isWarmupCompletedToday(habit);
 
@@ -98,6 +114,29 @@ router.get('/daily-warmup', async (req, res) => {
 });
 
 /**
+ * GET /api/review/daily-warmup/reinforce
+ * Generates targeted reinforcement questions for a topic the user made a mistake on.
+ */
+router.get('/daily-warmup/reinforce', async (req, res) => {
+  try {
+    const topic = (req.query.topic || 'addition').toLowerCase().trim();
+    const count = Math.min(4, Math.max(1, parseInt(req.query.count, 10) || 2));
+    const questions = [];
+    for (let i = 0; i < count; i++) {
+      questions.push(generateWarmupQuestion(topic, 'easy'));
+    }
+    res.json({
+      success: true,
+      topic,
+      questions
+    });
+  } catch (err) {
+    logger.error(null, '[review] GET /daily-warmup/reinforce error:', err);
+    res.status(500).json({ error: 'Failed to generate reinforcement questions', details: err.message });
+  }
+});
+
+/**
  * POST /api/review/daily-warmup/complete
  * Submits the completed warmup session, updates the weekly habit tracker, and awards +15 XP.
  */
@@ -105,17 +144,39 @@ router.post('/daily-warmup/complete', express.json(), async (req, res) => {
   try {
     const user = await getOptionalUser(req);
     const guestHabit = req.body.guestHabit || null;
+    const guestLadder = req.body.guestLadder || {};
+    const results = Array.isArray(req.body.results) ? req.body.results : [];
 
     const baseHabit = user ? (user.weeklyHabit || {}) : (guestHabit || {});
     const result = recordWarmupCompletion(baseHabit);
+
+    // Update spacing ladder rungs [1, 3, 7, 14, 30] for each practiced topic
+    let currentLadder = user?.spacingLadder ? JSON.parse(JSON.stringify(user.spacingLadder)) : { ...guestLadder };
+    const ladderUpdates = [];
+
+    for (const item of results) {
+      if (item && item.topic) {
+        const ladderRes = updateTopicSpacingLadder(currentLadder, item.topic, item.isCorrect);
+        currentLadder = ladderRes.ladder;
+        ladderUpdates.push({
+          topic: ladderRes.updatedTopic,
+          previousRung: ladderRes.previousRung,
+          rung: ladderRes.rung,
+          intervalDays: ladderRes.intervalDays,
+          nextReviewDueAt: ladderRes.nextReviewDueAt,
+          wentUp: ladderRes.wentUp
+        });
+      }
+    }
 
     const xpAwarded = 15;
 
     if (user) {
       user.weeklyHabit = result.habit;
+      user.spacingLadder = currentLadder;
       user.xp = (user.xp || 0) + xpAwarded;
       user.coins = (user.coins || 0) + xpAwarded;
-      user.totalSolved = (user.totalSolved || 0) + 3;
+      user.totalSolved = (user.totalSolved || 0) + results.length || 3;
 
       const mongoose = require('mongoose');
       if (mongoose.connection.readyState === 1 && typeof user.save === 'function') {
@@ -127,6 +188,8 @@ router.post('/daily-warmup/complete', express.json(), async (req, res) => {
       success: true,
       xpAwarded,
       justAchievedTarget: result.justAchievedTarget,
+      spacingLadder: currentLadder,
+      ladderUpdates,
       weeklyHabit: {
         targetDaysPerWeek: result.targetDaysPerWeek,
         currentWeekYear: result.habit.currentWeekYear,
